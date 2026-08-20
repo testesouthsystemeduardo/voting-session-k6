@@ -17,7 +17,7 @@
 # Carrega variáveis do .env se existir
 -include .env
 
-BASE_URL             ?= http://localhost:8080
+BASE_URL             ?= http://localhost:8081
 LOAD_VUS             ?= 50
 SOAK_DURATION        ?= 30m
 VOLUME_AGENDAS       ?= 500

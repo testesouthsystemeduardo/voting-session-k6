@@ -116,7 +116,9 @@ function writeScenario() {
   errorRate.add(!agendaOk);
 
   if (!agendaOk) return;
-  const agendaId = agendaRes.json('id');
+  let agendaId;
+  try { agendaId = agendaRes.json('id'); } catch (_) { return; }
+  if (!agendaId) return;
   sleep(0.2);
 
   // Abre sessão

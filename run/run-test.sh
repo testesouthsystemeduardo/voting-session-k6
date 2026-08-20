@@ -99,7 +99,7 @@ elif command -v docker &>/dev/null; then
   K6_CMD="docker run --rm \
     -v $ROOT_DIR/scripts:/scripts \
     -v $REPORTS_DIR:/reports \
-    -e BASE_URL=${BASE_URL:-http://host.docker.internal:8080} \
+    -e BASE_URL=${BASE_URL:-http://host.docker.internal:8081} \
     -e LOAD_VUS=${LOAD_VUS:-50} \
     -e SOAK_DURATION=${SOAK_DURATION:-30m} \
     -e VOLUME_AGENDAS=${VOLUME_AGENDAS:-500} \
@@ -148,7 +148,7 @@ if [[ "$K6_CMD" == docker* ]]; then
 fi
 
 # Exportar variáveis de ambiente para o processo k6
-export BASE_URL="${BASE_URL:-http://localhost:8080}"
+export BASE_URL="${BASE_URL:-http://localhost:8081}"
 export LOAD_VUS="${LOAD_VUS:-50}"
 export SOAK_DURATION="${SOAK_DURATION:-30m}"
 export VOLUME_AGENDAS="${VOLUME_AGENDAS:-500}"

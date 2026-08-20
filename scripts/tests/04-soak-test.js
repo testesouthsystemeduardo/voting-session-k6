@@ -135,7 +135,9 @@ function soakWriteScenario() {
   soakErrorRate.add(!agendaOk);
 
   if (!agendaOk) return;
-  const agendaId = agendaRes.json('id');
+  let agendaId;
+  try { agendaId = agendaRes.json('id'); } catch (_) { soakErrorRate.add(1); return; }
+  if (!agendaId) { soakErrorRate.add(1); return; }
   sleep(0.3);
 
   const sessionRes = openSession(agendaId, 60);

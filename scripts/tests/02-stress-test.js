@@ -81,7 +81,9 @@ export default function () {
     return;
   }
 
-  const agendaId = agendaRes.json('id');
+  let agendaId;
+  try { agendaId = agendaRes.json('id'); } catch (_) { breakingErrors.add(1); return; }
+  if (!agendaId) { breakingErrors.add(1); return; }
   sleep(0.1);
 
   // 2. Abrir sessão

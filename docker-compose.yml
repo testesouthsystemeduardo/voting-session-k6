@@ -82,7 +82,8 @@ services:
       - ./scripts:/scripts
       - ./reports:/reports
     environment:
-      BASE_URL:             ${BASE_URL:-http://host.docker.internal:8080}
+      # Porta 8081: docker-compose da voting-session mapeia 8081:8080
+      BASE_URL:             ${BASE_URL:-http://host.docker.internal:8081}
       INFLUXDB_URL:         http://influxdb:8086
       INFLUXDB_DB:          ${INFLUXDB_DB:-k6}
       K6_INFLUXDB_ADDR:     http://influxdb:8086

@@ -111,7 +111,9 @@ function writeScenario() {
   spikeErrorRate.add(!agendaOk);
 
   if (!agendaOk) return;
-  const agendaId = agendaRes.json('id');
+  let agendaId;
+  try { agendaId = agendaRes.json('id'); } catch (_) { return; }
+  if (!agendaId) return;
 
   const sessionRes = openSession(agendaId, 60);
   const sessionOk  = checkOpenSession(sessionRes);
