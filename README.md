@@ -48,6 +48,46 @@ voting-session-k6/
 
 ---
 
+## Pré-requisito: Desabilitar Validação de CPF
+
+> **Obrigatório antes de rodar qualquer teste de performance.**
+
+A API `voting-session` valida CPFs via serviço externo (`user-info.herokuapp.com`).
+Esse serviço faz **lookup por banco de dados** — CPFs sintéticos gerados pelo k6,
+mesmo que matematicamente válidos, não estão cadastrados e retornam 403.
+
+Edite o `docker-compose.yml` da `voting-session`:
+
+```yaml
+services:
+  app:
+    environment:
+      CPF_VALIDATION_ENABLED: "false"
+```
+
+Reinicie:
+
+```bash
+cd <caminho>/voting-session
+docker compose up -d --force-recreate app
+```
+
+Smoke test para confirmar:
+
+```bash
+AGENDA=$(curl -s -X POST http://localhost:8081/api/v1/agendas \
+  -H "Content-Type: application/json" \
+  -d '{"title":"smoke","description":"test"}' | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+curl -s -X POST "http://localhost:8081/api/v1/agendas/$AGENDA/session" \
+  -H "Content-Type: application/json" -d '{"durationMinutes":5}'
+curl -s -X POST "http://localhost:8081/api/v1/agendas/$AGENDA/votes" \
+  -H "Content-Type: application/json" \
+  -d '{"associateId":"10070991006","choice":"Sim"}'
+# Esperado: {"id":"...","choice":"SIM",...} — HTTP 201, não 403
+```
+
+---
+
 ## Pré-requisitos
 
 ### Opção A: k6 instalado localmente (recomendado)
