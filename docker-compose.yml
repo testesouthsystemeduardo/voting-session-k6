@@ -1,0 +1,102 @@
+version: "3.8"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# voting-session-k6 — Stack de Observabilidade + Execução de Testes
+#
+# Serviços:
+#   influxdb  — Armazena métricas em tempo real do k6
+#   grafana   — Dashboard de visualização
+#   k6        — Runner dos testes (executado via `make run-*`)
+#
+# Uso rápido:
+#   docker compose up -d influxdb grafana   # inicia stack de observabilidade
+#   docker compose run --rm k6 run /scripts/tests/01-load-test.js
+# ══════════════════════════════════════════════════════════════════════════════
+
+networks:
+  k6-network:
+    driver: bridge
+
+volumes:
+  influxdb-data:
+  grafana-data:
+
+services:
+
+  # ─── InfluxDB 1.8 ──────────────────────────────────────────────────────────
+  # k6 tem integração nativa com InfluxDB 1.x via --out influxdb
+  influxdb:
+    image: influxdb:1.8
+    container_name: k6-influxdb
+    networks:
+      - k6-network
+    ports:
+      - "8086:8086"
+    environment:
+      INFLUXDB_DB:               ${INFLUXDB_DB:-k6}
+      INFLUXDB_HTTP_AUTH_ENABLED: "false"
+      INFLUXDB_ADMIN_USER:       admin
+      INFLUXDB_ADMIN_PASSWORD:   k6secret
+    volumes:
+      - influxdb-data:/var/lib/influxdb
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/ping"]
+      interval: 10s
+      timeout:  5s
+      retries:  5
+
+  # ─── Grafana ───────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: k6-grafana
+    networks:
+      - k6-network
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER:     ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED:  "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout:  5s
+      retries:  5
+
+  # ─── k6 Runner ─────────────────────────────────────────────────────────────
+  # Não é executado automaticamente — use via `docker compose run`
+  k6:
+    image: grafana/k6:0.53.0
+    container_name: k6-runner
+    networks:
+      - k6-network
+    volumes:
+      - ./scripts:/scripts
+      - ./reports:/reports
+    environment:
+      BASE_URL:             ${BASE_URL:-http://host.docker.internal:8080}
+      INFLUXDB_URL:         http://influxdb:8086
+      INFLUXDB_DB:          ${INFLUXDB_DB:-k6}
+      K6_INFLUXDB_ADDR:     http://influxdb:8086
+      K6_INFLUXDB_DATABASE: ${INFLUXDB_DB:-k6}
+      LOAD_VUS:             ${LOAD_VUS:-50}
+      SOAK_DURATION:        ${SOAK_DURATION:-30m}
+      VOLUME_AGENDAS:       ${VOLUME_AGENDAS:-500}
+      VOLUME_VOTES_PER_AGENDA: ${VOLUME_VOTES_PER_AGENDA:-20}
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    # Perfil especial — só inicia quando explicitamente chamado
+    profiles:
+      - test-runner
+    extra_hosts:
+      # Permite acessar serviços rodando no host (Docker Desktop e Linux)
+      - "host.docker.internal:host-gateway"

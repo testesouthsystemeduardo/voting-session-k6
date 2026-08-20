@@ -1,0 +1,24 @@
+# Ambiente
+.env
+
+# Relatórios gerados (exceto o .gitkeep)
+reports/*.json
+reports/*.html
+reports/*.md
+
+# Node (caso use extensões k6)
+node_modules/
+package-lock.json
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Dados temporários do Grafana/InfluxDB (volumes locais)
+grafana-data/
+influxdb-data/
