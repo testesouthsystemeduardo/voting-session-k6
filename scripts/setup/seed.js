@@ -5,42 +5,65 @@
  * Usado como função setup() no k6. Retorna dados para os VUs.
  */
 import { createAgenda, openSession, healthCheck } from '../helpers/api.js';
-import { check, sleep } from 'k6';
+import { check, sleep, fail } from 'k6';
 
 const SEED_AGENDAS = parseInt(__ENV.SEED_AGENDAS || '10');
-const BASE_URL     = __ENV.BASE_URL || 'http://localhost:8080';
+const BASE_URL     = __ENV.BASE_URL || 'http://localhost:8081';
 
 /**
  * Verifica se a API está acessível antes de iniciar o seed.
- * Falha cedo com mensagem clara em vez de logar dezenas de 403/timeout.
+ * Tenta até MAX_RETRIES vezes com intervalo de RETRY_INTERVAL_S segundos.
+ * Falha cedo com mensagem clara em vez de logar dezenas de erros nos VUs.
  */
 function assertApiReachable() {
-  const res = healthCheck();
+  const MAX_RETRIES      = 5;
+  const RETRY_INTERVAL_S = 3;
 
-  if (res.status === 0) {
-    throw new Error(
-      `[seed] API inacessível em ${BASE_URL}.\n` +
-      `  → Verifique se a aplicação está rodando.\n` +
-      `  → Se usou docker-compose, a porta pode ser 8081: BASE_URL=http://localhost:8081\n` +
-      `  → Execute: cp .env.example .env  e ajuste BASE_URL`
-    );
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const res = healthCheck();
+
+    if (res.status === 200) {
+      let statusLabel = 'OK';
+      try { statusLabel = res.json('status'); } catch (_) {}
+      console.log(`[seed] API OK em ${BASE_URL} (status: ${statusLabel}) — tentativa ${attempt}/${MAX_RETRIES}`);
+      return;
+    }
+
+    if (res.status === 403 || res.status === 401) {
+      fail(
+        `[seed] API retornou ${res.status} em ${BASE_URL}/actuator/health.\n` +
+        `  → Indica porta errada ou proxy bloqueando.\n` +
+        `  → docker-compose da voting-session usa porta 8081: BASE_URL=http://localhost:8081\n` +
+        `  → Dentro do Docker: BASE_URL=http://host.docker.internal:8081`
+      );
+    }
+
+    if (res.status === 0) {
+      console.warn(
+        `[seed] API inacessível em ${BASE_URL} (tentativa ${attempt}/${MAX_RETRIES}) — connection refused/timeout.\n` +
+        `  → Porta padrão do docker-compose: 8081. Verifique: BASE_URL=http://localhost:8081\n` +
+        `  → Para subir: cd <voting-session> && docker compose up -d`
+      );
+    } else {
+      console.warn(`[seed] Health retornou HTTP ${res.status} (tentativa ${attempt}/${MAX_RETRIES})`);
+    }
+
+    if (attempt < MAX_RETRIES) {
+      console.log(`[seed] Aguardando ${RETRY_INTERVAL_S}s antes de tentar novamente...`);
+      sleep(RETRY_INTERVAL_S);
+    }
   }
 
-  if (res.status === 403 || res.status === 401) {
-    throw new Error(
-      `[seed] API retornou ${res.status} em ${BASE_URL}/actuator/health.\n` +
-      `  → Isso geralmente indica porta errada ou proxy à frente.\n` +
-      `  → Se usou docker-compose da voting-session, use: BASE_URL=http://localhost:8081\n` +
-      `  → Se estiver dentro do Docker, use: BASE_URL=http://host.docker.internal:8081`
-    );
-  }
-
-  if (res.status !== 200) {
-    console.warn(`[seed] Health check retornou ${res.status} — continuando mesmo assim.`);
-    return;
-  }
-
-  console.log(`[seed] API OK em ${BASE_URL} (status: ${res.json('status')})`);
+  // Última tentativa falhou
+  fail(
+    `[seed] API inacessível em ${BASE_URL} após ${MAX_RETRIES} tentativas.\n` +
+    `  1. Verifique se a aplicação está rodando:\n` +
+    `       cd <caminho>/voting-session && docker compose up -d\n` +
+    `  2. Confirme a porta correta:\n` +
+    `       curl ${BASE_URL}/actuator/health\n` +
+    `  3. Se a porta for diferente, ajuste BASE_URL no .env:\n` +
+    `       BASE_URL=http://localhost:<porta>`
+  );
 }
 
 /**

@@ -24,6 +24,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 REPORTS_DIR="$ROOT_DIR/reports"
 
+# Carrega .env automaticamente se existir
+ENV_FILE="$ROOT_DIR/.env"
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+  echo -e "\033[0;34m[INFO]\033[0m  Configurações carregadas de: $ENV_FILE"
+fi
+
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; BOLD='\033[1m'; RESET='\033[0m'
 

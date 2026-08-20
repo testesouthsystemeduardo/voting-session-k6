@@ -6,7 +6,7 @@
  */
 import http from 'k6/http';
 
-const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
+const BASE_URL = __ENV.BASE_URL || 'http://localhost:8081';
 const API_V1   = `${BASE_URL}/api/v1/agendas`;
 
 const JSON_HEADERS = {
