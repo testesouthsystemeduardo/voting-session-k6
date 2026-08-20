@@ -4,31 +4,23 @@
  * ══════════════════════════════════════════════════════════════════════════════
  *
  * OBJETIVO:
- *   Manter carga constante e moderada por longo período para detectar:
- *   - Vazamentos de memória (memory leaks) — JVM heap cresce continuamente?
- *   - Connection pool exhaustion — pool de DB esgota ao longo do tempo?
- *   - Degradação gradual de latência — p95 piora com o tempo?
- *   - Acúmulo de threads ou recursos não liberados
+ *   Manter carga constante por longo período para detectar memory leaks,
+ *   esgotamento de connection pool e degradação gradual de latência.
  *
- * CENÁRIO:
- *   - Ramp-up: 30 VUs em 2 minutos
- *   - Soak:    30 VUs por SOAK_DURATION (padrão: 30m — aumentar para prod: 2h+)
- *   - Ramp-down: 0 VUs em 1 minuto
- *   Total padrão: ~33 minutos
+ * VARIÁVEIS DE AMBIENTE:
+ *   LOAD_VUS          VUs constantes durante o soak        (padrão: 30)
+ *   SOAK_DURATION     Duração da fase de imersão           (padrão: 30m)
+ *   SOAK_RAMPUP       Duração do ramp-up inicial           (padrão: 2m)
+ *   SOAK_RAMPDOWN     Duração do ramp-down final           (padrão: 1m)
  *
- * CRITÉRIOS DE ACEITE:
- *   - p95 não deve aumentar mais de 20% do início para o fim
- *   - Taxa de erro < 0.5% em todo o período
- *   - Sem falhas catastróficas (p99 < 2s em todo período)
+ * Exemplos de uso:
+ *   ./run/run-test.sh soak
+ *   SOAK_DURATION=2h LOAD_VUS=20 ./run/run-test.sh soak
+ *   SOAK_DURATION=10m LOAD_VUS=10 ./run/run-test.sh soak   # rápido para dev
  *
- * OBSERVAÇÕES:
- *   - Para produção, configurar SOAK_DURATION=2h ou 4h
- *   - Monitorar métricas JVM via /actuator/metrics durante o teste:
- *       jvm.memory.used, jvm.gc.pause, hikaricp.connections.active
- *   - Usar Grafana + InfluxDB para visualizar evolução temporal
- *
- * FLUXO SIMULADO:
- *   Ciclo completo repetido com pequena pausa (simula uso sustentado real)
+ * OBSERVAÇÃO:
+ *   Monitorar /actuator/metrics durante o teste:
+ *     jvm.memory.used, hikaricp.connections.active, jvm.gc.pause
  * ══════════════════════════════════════════════════════════════════════════════
  */
 import { sleep } from 'k6';
@@ -44,64 +36,65 @@ import { uniqueAssociateId, uniqueAgendaTitle, randomChoice } from '../helpers/d
 import { seedAgendasWithOpenSessions } from '../setup/seed.js';
 
 // ─── Métricas para detectar degradação temporal ───────────────────────────────
-const soakLatencyTrend = new Trend('soak_latency_ms', true);
+const soakLatencyTrend = new Trend('soak_latency_ms',               true);
 const soakErrorRate    = new Rate('soak_error_rate');
 const memoryWarnings   = new Counter('soak_potential_leak_warnings');
 
-// ─── Opções ──────────────────────────────────────────────────────────────────
-const SOAK_DURATION = __ENV.SOAK_DURATION || '30m';
-const SOAK_VUS      = parseInt(__ENV.LOAD_VUS || '30');
+// ─── Parâmetros via env ───────────────────────────────────────────────────────
+const VUS          = parseInt(__ENV.LOAD_VUS       || '30');
+const SOAK_DUR     = __ENV.SOAK_DURATION           || '30m';
+const RAMPUP_DUR   = __ENV.SOAK_RAMPUP             || '2m';
+const RAMPDOWN_DUR = __ENV.SOAK_RAMPDOWN           || '1m';
 
+// Duração da sessão de seed = soak + margem (para não fechar durante o teste)
+// Converte SOAK_DUR para minutos somando 60 de margem
+function soakSessionDuration() {
+  const d = SOAK_DUR;
+  if (d.endsWith('h')) return parseInt(d) * 60 + 60;
+  if (d.endsWith('m')) return parseInt(d) + 60;
+  return 480; // fallback 8h
+}
+
+// ─── Opções ──────────────────────────────────────────────────────────────────
 export const options = {
   stages: [
-    { duration: '2m',          target: SOAK_VUS }, // ramp-up suave
-    { duration: SOAK_DURATION, target: SOAK_VUS }, // soak
-    { duration: '1m',          target: 0         }, // ramp-down
+    { duration: RAMPUP_DUR,   target: VUS }, // ramp-up suave
+    { duration: SOAK_DUR,     target: VUS }, // soak
+    { duration: RAMPDOWN_DUR, target: 0   }, // ramp-down
   ],
   thresholds: {
     http_req_duration: ['p(95)<1000', 'p(99)<2000'],
     http_req_failed:   ['rate<0.005'],
     soak_error_rate:   ['rate<0.005'],
-    // Latência do soak não deve exceder 1s no p95 em nenhum momento
     soak_latency_ms:   ['p(95)<1000'],
   },
   tags: { test_type: 'soak' },
 };
 
-// ─── Variável de controle para detectar degradação ───────────────────────────
 let iterationCount = 0;
 
-// ─── Setup ───────────────────────────────────────────────────────────────────
 export function setup() {
-  console.log(`[soak-test] Iniciando soak com ${SOAK_VUS} VUs por ${SOAK_DURATION}`);
-  const agendaIds = seedAgendasWithOpenSessions(20, 480); // 8h de sessão para soak longo
-  return { agendaIds };
+  console.log(`[soak] VUS=${VUS} | duration=${SOAK_DUR} | rampup=${RAMPUP_DUR} | rampdown=${RAMPDOWN_DUR}`);
+  return { agendaIds: seedAgendasWithOpenSessions(20, soakSessionDuration()) };
 }
 
-// ─── Cenário principal ───────────────────────────────────────────────────────
 export default function (data) {
   const { agendaIds } = data;
   iterationCount++;
 
-  // A cada 500 iterações, loga aviso para auxiliar análise pós-teste
   if (iterationCount % 500 === 0) {
     console.log(`[soak] Iteração ${iterationCount} — VU ${__VU}`);
   }
 
   const roll = Math.random();
-
   if (roll < 0.5) {
-    // Leitura — 50%
     soakReadScenario(agendaIds);
   } else if (roll < 0.8) {
-    // Fluxo de votação — 30%
     soakWriteScenario();
   } else {
-    // Health check — 20% (detecta se app ainda está saudável)
     soakHealthScenario();
   }
 
-  // Think time consistente — simula uso sustentado, não explosivo
   sleep(1.5 + Math.random());
 }
 
@@ -111,10 +104,9 @@ function soakReadScenario(agendaIds) {
   const ok = checkListAgendas(listRes);
   soakErrorRate.add(!ok);
 
-  // Detecta latência anormalmente alta — pode indicar leak de memória
   if (listRes.timings.duration > 2000) {
     memoryWarnings.add(1);
-    console.warn(`[soak] Latência alta detectada: ${listRes.timings.duration}ms no VU ${__VU}`);
+    console.warn(`[soak] Latência alta: ${listRes.timings.duration}ms no VU ${__VU}`);
   }
 
   if (agendaIds.length > 0) {
@@ -127,14 +119,13 @@ function soakReadScenario(agendaIds) {
 }
 
 function soakWriteScenario() {
-  const title = uniqueAgendaTitle(__VU, __ITER);
-
-  const agendaRes = createAgenda(title, 'Soak test - sustained write');
+  const title     = uniqueAgendaTitle(__VU, __ITER);
+  const agendaRes = createAgenda(title, 'Soak test write');
   soakLatencyTrend.add(agendaRes.timings.duration);
-  const agendaOk = checkCreateAgenda(agendaRes);
+  const agendaOk  = checkCreateAgenda(agendaRes);
   soakErrorRate.add(!agendaOk);
-
   if (!agendaOk) return;
+
   let agendaId;
   try { agendaId = agendaRes.json('id'); } catch (_) { soakErrorRate.add(1); return; }
   if (!agendaId) { soakErrorRate.add(1); return; }
@@ -142,16 +133,14 @@ function soakWriteScenario() {
 
   const sessionRes = openSession(agendaId, 60);
   soakLatencyTrend.add(sessionRes.timings.duration);
-  const sessionOk = checkOpenSession(sessionRes);
+  const sessionOk  = checkOpenSession(sessionRes);
   soakErrorRate.add(!sessionOk);
-
   if (!sessionOk) return;
   sleep(0.2);
 
   const associateId = uniqueAssociateId(__VU, __ITER);
   const voteRes     = castVote(agendaId, associateId, randomChoice());
   soakLatencyTrend.add(voteRes.timings.duration);
-  checkCastVote(voteRes);
   soakErrorRate.add(![201, 409].includes(voteRes.status));
 }
 
@@ -162,12 +151,11 @@ function soakHealthScenario() {
   soakErrorRate.add(!ok);
 
   if (!ok) {
-    console.error(`[soak] HEALTH CHECK FAILED no VU ${__VU}, iteração ${__ITER}`);
-    memoryWarnings.add(5); // peso maior: health falhou
+    console.error(`[soak] HEALTH CHECK FAILED no VU ${__VU}`);
+    memoryWarnings.add(5);
   }
 }
 
 export function teardown(data) {
-  console.log(`[soak-test] Concluído após ${SOAK_DURATION}. Total iterações: ${iterationCount}`);
-  console.log(`[soak-test] Warnings de possível leak: verificar métrica soak_potential_leak_warnings`);
+  console.log(`[soak] Concluído após ${SOAK_DUR}. Total iterações: ${iterationCount}`);
 }

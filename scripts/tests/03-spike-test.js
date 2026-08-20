@@ -4,28 +4,20 @@
  * ══════════════════════════════════════════════════════════════════════════════
  *
  * OBJETIVO:
- *   Enviar um aumento repentino e massivo de usuários de uma só vez para:
- *   - Verificar se o sistema absorve o choque sem erros graves
- *   - Medir o tempo de recuperação após o pico
- *   - Identificar se há degradação permanente após o spike
+ *   Enviar choque repentino e massivo de usuários para testar absorção e
+ *   tempo de recuperação do sistema.
  *
- * CENÁRIO (pico abrupto):
- *   Stage 1 — Pre-spike:  10 VUs por 1min  (tráfego mínimo)
- *   Stage 2 — Spike UP:  500 VUs por 0s    (spike instantâneo — 50x)
- *   Stage 3 — Spike:     500 VUs por 2min  (pico mantido brevemente)
- *   Stage 4 — Spike DN:   10 VUs por 0s    (queda instantânea)
- *   Stage 5 — Recovery:   10 VUs por 3min  (observar recuperação)
- *   Stage 6 — Cooldown:    0 VUs por 1min
- *   Total: ~7 minutos
+ * VARIÁVEIS DE AMBIENTE:
+ *   SPIKE_BASE_VUS          VUs em tráfego normal          (padrão: 10)
+ *   SPIKE_PEAK_VUS          VUs no pico instantâneo        (padrão: 500)
+ *   SPIKE_WARMUP_DURATION   Duração do aquecimento pré-pico (padrão: 1m)
+ *   SPIKE_PEAK_DURATION     Duração do pico                (padrão: 2m)
+ *   SPIKE_RECOVERY_DURATION Duração da fase de recuperação  (padrão: 3m)
  *
- * CRITÉRIOS OBSERVADOS:
- *   - Taxa de erro durante pico < 10%
- *   - Tempo de recuperação: p95 volta abaixo de 1s em < 2min após pico
- *   - Sem erros persistentes após recuperação (recovery stage)
- *
- * FLUXO SIMULADO:
- *   70% — Leitura (listagem, busca) — operações mais frequentes em picos reais
- *   30% — Votação (fluxo completo)  — operações de escrita
+ * Exemplos de uso:
+ *   ./run/run-test.sh spike
+ *   SPIKE_PEAK_VUS=200 SPIKE_PEAK_DURATION=1m ./run/run-test.sh spike
+ *   SPIKE_BASE_VUS=5 SPIKE_PEAK_VUS=1000 ./run/run-test.sh spike
  * ══════════════════════════════════════════════════════════════════════════════
  */
 import { sleep } from 'k6';
@@ -40,77 +32,74 @@ import {
 import { uniqueAssociateId, uniqueAgendaTitle, randomChoice } from '../helpers/data.js';
 import { seedAgendasWithOpenSessions } from '../setup/seed.js';
 
-// ─── Métricas customizadas ────────────────────────────────────────────────────
-const spikeErrorRate    = new Rate('spike_error_rate');
-const recoveryLatency   = new Trend('spike_recovery_latency', true);
+// ─── Métricas ─────────────────────────────────────────────────────────────────
+const spikeErrorRate  = new Rate('spike_error_rate');
+const recoveryLatency = new Trend('spike_recovery_latency', true);
+
+// ─── Parâmetros via env ───────────────────────────────────────────────────────
+const BASE_VUS     = parseInt(__ENV.SPIKE_BASE_VUS          || '10');
+const PEAK_VUS     = parseInt(__ENV.SPIKE_PEAK_VUS          || '500');
+const WARMUP_DUR   = __ENV.SPIKE_WARMUP_DURATION            || '1m';
+const PEAK_DUR     = __ENV.SPIKE_PEAK_DURATION              || '2m';
+const RECOVERY_DUR = __ENV.SPIKE_RECOVERY_DURATION          || '3m';
 
 // ─── Opções ──────────────────────────────────────────────────────────────────
 export const options = {
   stages: [
-    { duration: '1m',  target: 10  },  // tráfego base
-    { duration: '10s', target: 500 },  // spike instantâneo
-    { duration: '2m',  target: 500 },  // mantém pico
-    { duration: '10s', target: 10  },  // queda instantânea
-    { duration: '3m',  target: 10  },  // recuperação
-    { duration: '30s', target: 0   },  // cooldown
+    { duration: WARMUP_DUR,   target: BASE_VUS  }, // aquecimento
+    { duration: '10s',        target: PEAK_VUS  }, // spike instantâneo ↑
+    { duration: PEAK_DUR,     target: PEAK_VUS  }, // mantém pico
+    { duration: '10s',        target: BASE_VUS  }, // queda instantânea ↓
+    { duration: RECOVERY_DUR, target: BASE_VUS  }, // recuperação
+    { duration: '30s',        target: 0         }, // cooldown
   ],
   thresholds: {
-    // Durante pico: até 15% de erro é tolerável
-    http_req_failed: ['rate<0.15'],
-    // Após recuperação (todo o teste): p99 < 3s
+    http_req_failed:   ['rate<0.15'],
     http_req_duration: ['p(99)<3000'],
     spike_error_rate:  ['rate<0.15'],
   },
   tags: { test_type: 'spike' },
 };
 
-// ─── Setup: pautas pré-criadas para read durante pico ───────────────────────
 export function setup() {
+  console.log(`[spike] base=${BASE_VUS} peak=${PEAK_VUS} warmup=${WARMUP_DUR} peak_dur=${PEAK_DUR} recovery=${RECOVERY_DUR}`);
   return { agendaIds: seedAgendasWithOpenSessions(30, 180) };
 }
 
-// ─── Cenário principal ───────────────────────────────────────────────────────
 export default function (data) {
   const { agendaIds } = data;
   const roll = Math.random();
 
   if (roll < 0.70) {
-    // Cenário de leitura — mais frequente em picos reais (ex: notificação viral)
     readHeavyScenario(agendaIds);
   } else {
-    // Cenário de escrita — votar durante pico
     writeScenario();
   }
 
-  // Think time mínimo durante pico para simular comportamento real
   sleep(0.2 + Math.random() * 0.5);
 }
 
 function readHeavyScenario(agendaIds) {
-  // Listagem geral — endpoint mais acessado
   const listRes = listAgendas();
   recoveryLatency.add(listRes.timings.duration);
-  const listOk = checkListAgendas(listRes);
+  const listOk  = checkListAgendas(listRes);
   spikeErrorRate.add(!listOk);
 
   if (agendaIds.length === 0) return;
 
-  // Consulta resultado de pauta aleatória
   const agendaId  = agendaIds[Math.floor(Math.random() * agendaIds.length)];
   const resultRes = getResult(agendaId);
   recoveryLatency.add(resultRes.timings.duration);
-  const resultOk = checkGetResult(resultRes);
-  spikeErrorRate.add(!resultOk);
+  spikeErrorRate.add(!checkGetResult(resultRes));
 }
 
 function writeScenario() {
-  const title = uniqueAgendaTitle(__VU, __ITER);
-
+  const title     = uniqueAgendaTitle(__VU, __ITER);
   const agendaRes = createAgenda(title, 'Spike test write');
   const agendaOk  = checkCreateAgenda(agendaRes);
   spikeErrorRate.add(!agendaOk);
-
   if (!agendaOk) return;
+
   let agendaId;
   try { agendaId = agendaRes.json('id'); } catch (_) { return; }
   if (!agendaId) return;
@@ -118,16 +107,14 @@ function writeScenario() {
   const sessionRes = openSession(agendaId, 60);
   const sessionOk  = checkOpenSession(sessionRes);
   spikeErrorRate.add(!sessionOk);
-
   if (!sessionOk) return;
 
   const associateId = uniqueAssociateId(__VU, __ITER);
   const voteRes     = castVote(agendaId, associateId, randomChoice());
-  // Durante spike, 409/422 são esperados se a sessão fechar
   checkCastVote(voteRes, true);
   spikeErrorRate.add(![201, 409, 422].includes(voteRes.status));
 }
 
 export function teardown(data) {
-  console.log(`[spike-test] Concluído. ${data.agendaIds.length} pautas usadas para reads.`);
+  console.log(`[spike] Concluído. Pautas seed: ${data.agendaIds.length}`);
 }

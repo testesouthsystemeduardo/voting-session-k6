@@ -4,29 +4,21 @@
  * ══════════════════════════════════════════════════════════════════════════════
  *
  * OBJETIVO:
- *   Aumentar a carga progressivamente muito além dos limites normais para:
- *   - Descobrir o ponto exato de falha (breaking point)
- *   - Entender como o sistema se comporta sob degradação
- *   - Verificar se o sistema se recupera após redução de carga
+ *   Aumentar a carga progressivamente para descobrir o ponto de quebra.
  *
- * CENÁRIO (escadas crescentes):
- *   Stage 1 — Baseline:  50 VUs por 2min  (carga normal)
- *   Stage 2 — Elevated: 100 VUs por 2min  (2x normal)
- *   Stage 3 — High:     150 VUs por 2min  (3x normal)
- *   Stage 4 — Stress:   200 VUs por 2min  (4x normal)
- *   Stage 5 — Peak:     300 VUs por 2min  (6x normal — breaking zone)
- *   Stage 6 — Recovery: 100 VUs por 2min  (verificar recuperação)
- *   Stage 7 — Cooldown:   0 VUs por 1min
- *   Total: ~13 minutos
+ * VARIÁVEIS DE AMBIENTE:
+ *   LOAD_VUS              VUs da baseline (1x normal)        (padrão: 50)
+ *   STRESS_MAX_VUS        VUs no pico de estresse            (padrão: 300)
+ *   STRESS_STAGE_DURATION Duração de cada estágio            (padrão: 2m)
+ *   STRESS_RECOVERY_VUS   VUs no estágio de recuperação      (padrão: LOAD_VUS)
  *
- * CRITÉRIOS OBSERVADOS (não impõem falha — objetivo é medir degradação):
- *   - Em qual VU count o p95 ultrapassa 1s?
- *   - Em qual VU count a taxa de erro ultrapassa 5%?
- *   - O sistema se recupera ao reduzir para 100 VUs?
+ * Exemplos de uso:
+ *   ./run/run-test.sh stress
+ *   STRESS_MAX_VUS=500 STRESS_STAGE_DURATION=3m ./run/run-test.sh stress
+ *   LOAD_VUS=30 STRESS_MAX_VUS=200 ./run/run-test.sh stress
  *
- * FLUXO SIMULADO:
- *   Fluxo completo: create agenda → open session → vote → get result
- *   (ciclo mais pesado, maximiza carga no banco)
+ * ESTÁGIOS (escadas crescentes):
+ *   1x baseline → 2x → 3x → 4x → STRESS_MAX_VUS → recuperação → cooldown
  * ══════════════════════════════════════════════════════════════════════════════
  */
 import { sleep } from 'k6';
@@ -39,81 +31,68 @@ import {
 } from '../helpers/checks.js';
 import { uniqueAssociateId, uniqueAgendaTitle, randomChoice } from '../helpers/data.js';
 
-// ─── Métricas customizadas ────────────────────────────────────────────────────
-const fullFlowLatency  = new Trend('stress_full_flow_latency', true);
-const breakingErrors   = new Counter('stress_breaking_errors');
-const degradationRate  = new Rate('stress_degradation_rate');
+// ─── Métricas ─────────────────────────────────────────────────────────────────
+const fullFlowLatency = new Trend('stress_full_flow_latency', true);
+const breakingErrors  = new Counter('stress_breaking_errors');
+const degradationRate = new Rate('stress_degradation_rate');
+
+// ─── Parâmetros via env ───────────────────────────────────────────────────────
+const BASE_VUS     = parseInt(__ENV.LOAD_VUS              || '50');
+const MAX_VUS      = parseInt(__ENV.STRESS_MAX_VUS        || '300');
+const STAGE_DUR    = __ENV.STRESS_STAGE_DURATION          || '2m';
+const RECOVERY_VUS = parseInt(__ENV.STRESS_RECOVERY_VUS   || String(BASE_VUS));
 
 // ─── Opções ──────────────────────────────────────────────────────────────────
 export const options = {
   stages: [
-    { duration: '2m', target: 50  },  // baseline
-    { duration: '2m', target: 100 },  // 2x normal
-    { duration: '2m', target: 150 },  // 3x normal
-    { duration: '2m', target: 200 },  // 4x normal — stress
-    { duration: '2m', target: 300 },  // 6x normal — breaking point
-    { duration: '2m', target: 100 },  // recovery check
-    { duration: '1m', target: 0   },  // cooldown
+    { duration: STAGE_DUR, target: BASE_VUS                      }, // baseline (1x)
+    { duration: STAGE_DUR, target: Math.round(BASE_VUS * 2)      }, // 2x
+    { duration: STAGE_DUR, target: Math.round(BASE_VUS * 3)      }, // 3x
+    { duration: STAGE_DUR, target: Math.round(BASE_VUS * 4)      }, // 4x
+    { duration: STAGE_DUR, target: MAX_VUS                       }, // pico
+    { duration: STAGE_DUR, target: RECOVERY_VUS                  }, // recuperação
+    { duration: '1m',      target: 0                             }, // cooldown
   ],
-  // Thresholds amplos — objetivo é observar, não forçar falha do teste
   thresholds: {
-    http_req_duration: ['p(99)<5000'],  // falha apenas acima de 5s p99
-    http_req_failed:   ['rate<0.30'],   // tolera até 30% de erro (zona de quebra)
+    http_req_duration: ['p(99)<5000'],
+    http_req_failed:   ['rate<0.30'],
   },
   tags: { test_type: 'stress' },
 };
 
-// ─── Cenário principal ───────────────────────────────────────────────────────
-export default function () {
-  const startTime = Date.now();
+export function setup() {
+  console.log(`[stress] base=${BASE_VUS} max=${MAX_VUS} stage=${STAGE_DUR} recovery=${RECOVERY_VUS}`);
+}
 
-  // Fluxo completo — o mais custoso, maximiza pressão
+export default function () {
+  const startTime   = Date.now();
   const title       = uniqueAgendaTitle(__VU, __ITER);
   const associateId = uniqueAssociateId(__VU, __ITER);
 
-  // 1. Criar pauta
   const agendaRes = createAgenda(title, 'Stress test - full flow');
   const agendaOk  = checkCreateAgenda(agendaRes);
-
-  if (!agendaOk) {
-    breakingErrors.add(1);
-    degradationRate.add(1);
-    return;
-  }
+  if (!agendaOk) { breakingErrors.add(1); degradationRate.add(1); return; }
 
   let agendaId;
   try { agendaId = agendaRes.json('id'); } catch (_) { breakingErrors.add(1); return; }
   if (!agendaId) { breakingErrors.add(1); return; }
   sleep(0.1);
 
-  // 2. Abrir sessão
   const sessionRes = openSession(agendaId, 60);
   const sessionOk  = checkOpenSession(sessionRes);
-
-  if (!sessionOk) {
-    breakingErrors.add(1);
-    degradationRate.add(1);
-    return;
-  }
-
+  if (!sessionOk) { breakingErrors.add(1); degradationRate.add(1); return; }
   sleep(0.1);
 
-  // 3. Votar
   const voteRes = castVote(agendaId, associateId, randomChoice());
   checkCastVote(voteRes, false);
-
   sleep(0.1);
 
-  // 4. Consultar resultado
   const resultRes = getResult(agendaId);
   const resultOk  = checkGetResult(resultRes);
 
-  // Mede latência total do fluxo
-  const flowDuration = Date.now() - startTime;
-  fullFlowLatency.add(flowDuration);
+  fullFlowLatency.add(Date.now() - startTime);
   degradationRate.add(!resultOk);
 
-  // 5. Listagem (operação read adicional sob pressão)
   const listRes = listAgendas();
   degradationRate.add(listRes.status !== 200);
 

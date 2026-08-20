@@ -101,9 +101,26 @@ elif command -v docker &>/dev/null; then
     -v $REPORTS_DIR:/reports \
     -e BASE_URL=${BASE_URL:-http://host.docker.internal:8081} \
     -e LOAD_VUS=${LOAD_VUS:-50} \
+    -e LOAD_RAMPUP=${LOAD_RAMPUP:-1m} \
+    -e LOAD_STEADY=${LOAD_STEADY:-5m} \
+    -e LOAD_RAMPDOWN=${LOAD_RAMPDOWN:-1m} \
+    -e STRESS_MAX_VUS=${STRESS_MAX_VUS:-300} \
+    -e STRESS_STAGE_DURATION=${STRESS_STAGE_DURATION:-2m} \
+    -e STRESS_RECOVERY_VUS=${STRESS_RECOVERY_VUS:-50} \
+    -e SPIKE_BASE_VUS=${SPIKE_BASE_VUS:-10} \
+    -e SPIKE_PEAK_VUS=${SPIKE_PEAK_VUS:-500} \
+    -e SPIKE_WARMUP_DURATION=${SPIKE_WARMUP_DURATION:-1m} \
+    -e SPIKE_PEAK_DURATION=${SPIKE_PEAK_DURATION:-2m} \
+    -e SPIKE_RECOVERY_DURATION=${SPIKE_RECOVERY_DURATION:-3m} \
     -e SOAK_DURATION=${SOAK_DURATION:-30m} \
+    -e SOAK_RAMPUP=${SOAK_RAMPUP:-2m} \
+    -e SOAK_RAMPDOWN=${SOAK_RAMPDOWN:-1m} \
     -e VOLUME_AGENDAS=${VOLUME_AGENDAS:-500} \
     -e VOLUME_VOTES_PER_AGENDA=${VOLUME_VOTES_PER_AGENDA:-20} \
+    -e VOLUME_INSERT_VUS=${VOLUME_INSERT_VUS:-10} \
+    -e VOLUME_WARMUP_VUS=${VOLUME_WARMUP_VUS:-5} \
+    -e VOLUME_QUERY_VUS=${VOLUME_QUERY_VUS:-20} \
+    -e VOLUME_QUERY_DURATION=${VOLUME_QUERY_DURATION:-5m} \
     --add-host host.docker.internal:host-gateway \
     --network k6-network \
     grafana/k6:0.53.0"
@@ -179,12 +196,39 @@ if [[ "$K6_CMD" == docker* ]]; then
   SCRIPT_ARG="/scripts/tests/${TEST_FILES[$TEST_TYPE]}"
 fi
 
-# Exportar variáveis de ambiente para o processo k6
+# Exportar todas as variáveis de configuração para o processo k6
 export BASE_URL="${BASE_URL:-http://localhost:8081}"
+
+# Carga
 export LOAD_VUS="${LOAD_VUS:-50}"
+export LOAD_RAMPUP="${LOAD_RAMPUP:-1m}"
+export LOAD_STEADY="${LOAD_STEADY:-5m}"
+export LOAD_RAMPDOWN="${LOAD_RAMPDOWN:-1m}"
+
+# Estresse
+export STRESS_MAX_VUS="${STRESS_MAX_VUS:-300}"
+export STRESS_STAGE_DURATION="${STRESS_STAGE_DURATION:-2m}"
+export STRESS_RECOVERY_VUS="${STRESS_RECOVERY_VUS:-${LOAD_VUS}}"
+
+# Pico
+export SPIKE_BASE_VUS="${SPIKE_BASE_VUS:-10}"
+export SPIKE_PEAK_VUS="${SPIKE_PEAK_VUS:-500}"
+export SPIKE_WARMUP_DURATION="${SPIKE_WARMUP_DURATION:-1m}"
+export SPIKE_PEAK_DURATION="${SPIKE_PEAK_DURATION:-2m}"
+export SPIKE_RECOVERY_DURATION="${SPIKE_RECOVERY_DURATION:-3m}"
+
+# Imersão
 export SOAK_DURATION="${SOAK_DURATION:-30m}"
+export SOAK_RAMPUP="${SOAK_RAMPUP:-2m}"
+export SOAK_RAMPDOWN="${SOAK_RAMPDOWN:-1m}"
+
+# Volume
 export VOLUME_AGENDAS="${VOLUME_AGENDAS:-500}"
 export VOLUME_VOTES_PER_AGENDA="${VOLUME_VOTES_PER_AGENDA:-20}"
+export VOLUME_INSERT_VUS="${VOLUME_INSERT_VUS:-10}"
+export VOLUME_WARMUP_VUS="${VOLUME_WARMUP_VUS:-5}"
+export VOLUME_QUERY_VUS="${VOLUME_QUERY_VUS:-20}"
+export VOLUME_QUERY_DURATION="${VOLUME_QUERY_DURATION:-5m}"
 
 # Executar k6 com summary HTML via --summary-export
 set +e

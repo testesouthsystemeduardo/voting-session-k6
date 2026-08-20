@@ -17,17 +17,51 @@
 # Carrega variáveis do .env se existir
 -include .env
 
-BASE_URL             ?= http://localhost:8081
-LOAD_VUS             ?= 50
-SOAK_DURATION        ?= 30m
-VOLUME_AGENDAS       ?= 500
-VOLUME_VOTES_PER_AGENDA ?= 20
-GRAFANA_PORT         ?= 3000
-INFLUXDB_DB          ?= k6
-K6_INFLUXDB_OUT      ?= false
+BASE_URL                 ?= http://localhost:8081
 
-export BASE_URL LOAD_VUS SOAK_DURATION VOLUME_AGENDAS VOLUME_VOTES_PER_AGENDA
-export GRAFANA_PORT INFLUXDB_DB K6_INFLUXDB_OUT
+# ─── Carga (load) ─────────────────────────────────────────────────────────────
+LOAD_VUS                 ?= 50
+LOAD_RAMPUP              ?= 1m
+LOAD_STEADY              ?= 5m
+LOAD_RAMPDOWN            ?= 1m
+
+# ─── Estresse (stress) ────────────────────────────────────────────────────────
+STRESS_MAX_VUS           ?= 300
+STRESS_STAGE_DURATION    ?= 2m
+STRESS_RECOVERY_VUS      ?= $(LOAD_VUS)
+
+# ─── Pico (spike) ─────────────────────────────────────────────────────────────
+SPIKE_BASE_VUS           ?= 10
+SPIKE_PEAK_VUS           ?= 500
+SPIKE_WARMUP_DURATION    ?= 1m
+SPIKE_PEAK_DURATION      ?= 2m
+SPIKE_RECOVERY_DURATION  ?= 3m
+
+# ─── Imersão (soak) ───────────────────────────────────────────────────────────
+SOAK_DURATION            ?= 30m
+SOAK_RAMPUP              ?= 2m
+SOAK_RAMPDOWN            ?= 1m
+
+# ─── Volume ───────────────────────────────────────────────────────────────────
+VOLUME_AGENDAS           ?= 500
+VOLUME_VOTES_PER_AGENDA  ?= 20
+VOLUME_INSERT_VUS        ?= 10
+VOLUME_WARMUP_VUS        ?= 5
+VOLUME_QUERY_VUS         ?= 20
+VOLUME_QUERY_DURATION    ?= 5m
+
+# ─── Observabilidade ──────────────────────────────────────────────────────────
+GRAFANA_PORT             ?= 3000
+INFLUXDB_DB              ?= k6
+K6_INFLUXDB_OUT          ?= false
+
+export BASE_URL \
+       LOAD_VUS LOAD_RAMPUP LOAD_STEADY LOAD_RAMPDOWN \
+       STRESS_MAX_VUS STRESS_STAGE_DURATION STRESS_RECOVERY_VUS \
+       SPIKE_BASE_VUS SPIKE_PEAK_VUS SPIKE_WARMUP_DURATION SPIKE_PEAK_DURATION SPIKE_RECOVERY_DURATION \
+       SOAK_DURATION SOAK_RAMPUP SOAK_RAMPDOWN \
+       VOLUME_AGENDAS VOLUME_VOTES_PER_AGENDA VOLUME_INSERT_VUS VOLUME_WARMUP_VUS VOLUME_QUERY_VUS VOLUME_QUERY_DURATION \
+       GRAFANA_PORT INFLUXDB_DB K6_INFLUXDB_OUT
 
 .PHONY: help stack-up stack-down stack-logs grafana-open \
         load stress spike soak volume all-tests \
@@ -55,11 +89,21 @@ help:
 	@echo "Com InfluxDB output:"
 	@echo "  make stack-up && K6_INFLUXDB_OUT=true make load"
 	@echo ""
-	@echo "Variáveis configuráveis:"
+	@echo "Variáveis por tipo de teste:"
 	@echo "  BASE_URL=$(BASE_URL)"
-	@echo "  LOAD_VUS=$(LOAD_VUS)"
-	@echo "  SOAK_DURATION=$(SOAK_DURATION)"
-	@echo "  VOLUME_AGENDAS=$(VOLUME_AGENDAS)"
+	@echo ""
+	@echo "  [load]   LOAD_VUS=$(LOAD_VUS)  LOAD_RAMPUP=$(LOAD_RAMPUP)  LOAD_STEADY=$(LOAD_STEADY)  LOAD_RAMPDOWN=$(LOAD_RAMPDOWN)"
+	@echo "  [stress] STRESS_MAX_VUS=$(STRESS_MAX_VUS)  STRESS_STAGE_DURATION=$(STRESS_STAGE_DURATION)  STRESS_RECOVERY_VUS=$(STRESS_RECOVERY_VUS)"
+	@echo "  [spike]  SPIKE_BASE_VUS=$(SPIKE_BASE_VUS)  SPIKE_PEAK_VUS=$(SPIKE_PEAK_VUS)  SPIKE_PEAK_DURATION=$(SPIKE_PEAK_DURATION)  SPIKE_RECOVERY_DURATION=$(SPIKE_RECOVERY_DURATION)"
+	@echo "  [soak]   LOAD_VUS=$(LOAD_VUS)  SOAK_DURATION=$(SOAK_DURATION)  SOAK_RAMPUP=$(SOAK_RAMPUP)"
+	@echo "  [volume] VOLUME_AGENDAS=$(VOLUME_AGENDAS)  VOLUME_VOTES_PER_AGENDA=$(VOLUME_VOTES_PER_AGENDA)  VOLUME_INSERT_VUS=$(VOLUME_INSERT_VUS)  VOLUME_QUERY_DURATION=$(VOLUME_QUERY_DURATION)"
+	@echo ""
+	@echo "Exemplos de uso com variáveis customizadas:"
+	@echo "  LOAD_VUS=100 LOAD_STEADY=10m make load"
+	@echo "  STRESS_MAX_VUS=500 STRESS_STAGE_DURATION=3m make stress"
+	@echo "  SPIKE_PEAK_VUS=1000 SPIKE_PEAK_DURATION=5m make spike"
+	@echo "  SOAK_DURATION=2h LOAD_VUS=20 make soak"
+	@echo "  VOLUME_AGENDAS=1000 VOLUME_VOTES_PER_AGENDA=50 make volume"
 	@echo ""
 	@echo "Relatórios:"
 	@echo "  make clean-reports   Remove relatórios antigos"
