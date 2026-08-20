@@ -114,6 +114,38 @@ else
   exit 1
 fi
 
+# ─── Pre-flight: verificar se a API está acessível ───────────────────────────
+TARGET_URL="${BASE_URL:-http://localhost:8081}"
+HEALTH_URL="${TARGET_URL}/actuator/health"
+
+log_info "Pre-flight: verificando API em ${HEALTH_URL} ..."
+
+HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 10 "$HEALTH_URL" 2>/dev/null || echo "000")
+
+if [[ "$HEALTH_STATUS" == "000" ]]; then
+  log_error "API inacessível (connection refused / timeout): ${TARGET_URL}"
+  echo ""
+  echo "  Para subir a aplicação via docker-compose:"
+  echo "    cd <caminho>/voting-session"
+  echo "    docker compose up -d"
+  echo ""
+  echo "  Aguarde ~10s e verifique:"
+  echo "    curl ${HEALTH_URL}"
+  echo ""
+  echo "  Se a porta for diferente, ajuste no .env:"
+  echo "    BASE_URL=http://localhost:<porta>"
+  exit 1
+elif [[ "$HEALTH_STATUS" == "403" || "$HEALTH_STATUS" == "401" ]]; then
+  log_warn "API retornou ${HEALTH_STATUS} em ${HEALTH_URL}."
+  log_warn "Isso pode indicar porta errada ou proxy à frente."
+  log_warn "Verifique: curl -v ${HEALTH_URL}"
+  # Continua mesmo assim — pode ser configuração de actuator
+elif [[ "$HEALTH_STATUS" != "200" ]]; then
+  log_warn "Health check retornou HTTP ${HEALTH_STATUS}. Continuando mesmo assim..."
+else
+  log_success "API respondeu HTTP 200 — OK para iniciar o teste"
+fi
+
 # ─── Configurar output ────────────────────────────────────────────────────────
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 REPORT_FILE="$REPORTS_DIR/${TEST_TYPE}_${TIMESTAMP}.json"
@@ -136,7 +168,7 @@ K6_OUT_ARGS="$K6_OUT_ARGS --out json=$REPORT_FILE"
 # ─── Executar ────────────────────────────────────────────────────────────────
 log_header "k6 — ${TEST_DESCRIPTIONS[$TEST_TYPE]}"
 log_info "Script:    ${TEST_SCRIPT}"
-log_info "Alvo:      ${BASE_URL:-http://localhost:8080}"
+log_info "Alvo:      ${TARGET_URL}"
 log_info "Relatório: ${REPORT_FILE}"
 log_info "Timestamp: ${TIMESTAMP}"
 echo ""

@@ -89,37 +89,55 @@ check-k6:
 	@command -v k6 >/dev/null 2>&1 || (command -v docker >/dev/null 2>&1 && echo "Using Docker for k6") || \
 	  (echo "ERROR: k6 ou Docker necessários. https://k6.io/docs/get-started/installation/" && exit 1)
 
-check-deps: check-k6
-	@echo "✓ Dependências verificadas"
+check-api:
+	@echo "→ Verificando API em $(BASE_URL)/actuator/health ..."
+	@STATUS=$$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 10 \
+	  "$(BASE_URL)/actuator/health" 2>/dev/null || echo "000"); \
+	if [ "$$STATUS" = "000" ]; then \
+	  echo ""; \
+	  echo "  ✗ API inacessível: $(BASE_URL)"; \
+	  echo ""; \
+	  echo "  Suba a aplicação antes de rodar os testes:"; \
+	  echo "    cd <caminho>/voting-session && docker compose up -d"; \
+	  echo ""; \
+	  exit 1; \
+	elif [ "$$STATUS" = "200" ]; then \
+	  echo "  ✓ API OK (HTTP 200)"; \
+	else \
+	  echo "  ⚠ API respondeu HTTP $$STATUS — verifique a URL e porta"; \
+	fi
+
+check-deps: check-k6 check-api
+	@echo "✓ Todas as verificações passaram"
 
 # ─── Testes individuais ───────────────────────────────────────────────────────
-load: check-k6
+load: check-k6 check-api
 	@chmod +x run/run-test.sh
 	./run/run-test.sh load
 
-stress: check-k6
+stress: check-k6 check-api
 	@chmod +x run/run-test.sh
 	./run/run-test.sh stress
 
-spike: check-k6
+spike: check-k6 check-api
 	@chmod +x run/run-test.sh
 	./run/run-test.sh spike
 
-soak: check-k6
+soak: check-k6 check-api
 	@chmod +x run/run-test.sh
 	./run/run-test.sh soak
 
-volume: check-k6
+volume: check-k6 check-api
 	@chmod +x run/run-test.sh
 	./run/run-test.sh volume
 
 # ─── Suite completa ───────────────────────────────────────────────────────────
-all-tests: check-k6
+all-tests: check-k6 check-api
 	@chmod +x run/run-all.sh run/run-test.sh
 	./run/run-all.sh
 
 # Suite rápida: pula soak (muito longo) para CI
-quick-tests: check-k6
+quick-tests: check-k6 check-api
 	@chmod +x run/run-all.sh run/run-test.sh
 	./run/run-all.sh --skip soak
 
