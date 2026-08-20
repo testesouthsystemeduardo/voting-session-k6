@@ -142,36 +142,47 @@ else
   exit 1
 fi
 
-# ─── Pre-flight: verificar se a API está acessível ───────────────────────────
+# ─── Pre-flight: aguardar API estar pronta ────────────────────────────────────
 TARGET_URL="${BASE_URL:-http://localhost:8081}"
 HEALTH_URL="${TARGET_URL}/actuator/health"
 
-log_info "Pre-flight: verificando API em ${HEALTH_URL} ..."
+PREFLIGHT_MAX_WAIT="${PREFLIGHT_MAX_WAIT:-120}"   # segundos máximos de espera
+PREFLIGHT_INTERVAL=5                              # intervalo entre tentativas
 
-HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 10 "$HEALTH_URL" 2>/dev/null || echo "000")
+log_info "Pre-flight: aguardando API em ${HEALTH_URL} (timeout: ${PREFLIGHT_MAX_WAIT}s)..."
 
-if [[ "$HEALTH_STATUS" == "000" ]]; then
-  log_error "API inacessível (connection refused / timeout): ${TARGET_URL}"
+ELAPSED=0
+API_READY=false
+
+while [[ $ELAPSED -lt $PREFLIGHT_MAX_WAIT ]]; do
+  HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+    --connect-timeout 3 --max-time 5 "$HEALTH_URL" 2>/dev/null || echo "000")
+
+  if [[ "$HEALTH_STATUS" == "200" ]]; then
+    log_success "API pronta (HTTP 200) após ${ELAPSED}s — iniciando k6"
+    API_READY=true
+    break
+  fi
+
+  echo -e "  ${YELLOW}[${ELAPSED}s]${RESET} HTTP ${HEALTH_STATUS} — aguardando ${PREFLIGHT_INTERVAL}s..."
+  sleep $PREFLIGHT_INTERVAL
+  ELAPSED=$(( ELAPSED + PREFLIGHT_INTERVAL ))
+done
+
+if [[ "$API_READY" != "true" ]]; then
+  log_error "API não ficou pronta em ${PREFLIGHT_MAX_WAIT}s. Abortando."
   echo ""
-  echo "  Para subir a aplicação via docker-compose:"
+  echo "  Diagnóstico:"
+  echo "    docker compose ps                          # verifica status dos containers"
+  echo "    docker compose logs app --tail=50          # logs da aplicação"
+  echo ""
+  echo "  Para (re)construir com as últimas alterações:"
   echo "    cd <caminho>/voting-session"
-  echo "    docker compose up -d"
+  echo "    docker compose build app && docker compose up -d"
   echo ""
-  echo "  Aguarde ~10s e verifique:"
+  echo "  Verifique a saúde individual:"
   echo "    curl ${HEALTH_URL}"
-  echo ""
-  echo "  Se a porta for diferente, ajuste no .env:"
-  echo "    BASE_URL=http://localhost:<porta>"
   exit 1
-elif [[ "$HEALTH_STATUS" == "403" || "$HEALTH_STATUS" == "401" ]]; then
-  log_warn "API retornou ${HEALTH_STATUS} em ${HEALTH_URL}."
-  log_warn "Isso pode indicar porta errada ou proxy à frente."
-  log_warn "Verifique: curl -v ${HEALTH_URL}"
-  # Continua mesmo assim — pode ser configuração de actuator
-elif [[ "$HEALTH_STATUS" != "200" ]]; then
-  log_warn "Health check retornou HTTP ${HEALTH_STATUS}. Continuando mesmo assim..."
-else
-  log_success "API respondeu HTTP 200 — OK para iniciar o teste"
 fi
 
 # ─── Configurar output ────────────────────────────────────────────────────────

@@ -69,7 +69,7 @@ export BASE_URL \
 
 .PHONY: help stack-up stack-down stack-logs grafana-open \
         load stress spike soak volume all-tests \
-        clean-reports check-k6 check-deps
+        clean-reports check-k6 check-deps wait-api
 
 # ─── Help ────────────────────────────────────────────────────────────────────
 help:
@@ -157,6 +157,28 @@ check-api:
 
 check-deps: check-k6 check-api
 	@echo "✓ Todas as verificações passaram"
+
+# Aguarda a API ficar pronta (até PREFLIGHT_MAX_WAIT segundos)
+# Útil após 'docker compose up -d' quando o app demora para inicializar (ex: com Kafka)
+#   make wait-api                  # aguarda até 120s
+#   make wait-api PREFLIGHT_MAX_WAIT=180  # aguarda até 180s
+wait-api:
+	@echo "→ Aguardando API em $(BASE_URL)/actuator/health ..."
+	@MAX=$${PREFLIGHT_MAX_WAIT:-120}; ELAPSED=0; INTERVAL=5; \
+	while [ $$ELAPSED -lt $$MAX ]; do \
+	  STATUS=$$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 3 --max-time 5 \
+	    "$(BASE_URL)/actuator/health" 2>/dev/null || echo "000"); \
+	  if [ "$$STATUS" = "200" ]; then \
+	    echo "  ✓ API pronta (HTTP 200) — após $${ELAPSED}s"; \
+	    exit 0; \
+	  fi; \
+	  echo "  [$${ELAPSED}s] HTTP $$STATUS — aguardando $${INTERVAL}s..."; \
+	  sleep $$INTERVAL; \
+	  ELAPSED=$$((ELAPSED + INTERVAL)); \
+	done; \
+	echo "  ✗ API não ficou pronta em $${MAX}s"; \
+	echo "    Verifique: docker compose logs app --tail=50"; \
+	exit 1
 
 # ─── Testes individuais ───────────────────────────────────────────────────────
 load: check-k6 check-api
