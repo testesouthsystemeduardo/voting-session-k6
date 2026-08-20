@@ -112,10 +112,28 @@ export function getResult(agendaId) {
  * GET /actuator/health
  * Verifica saúde da aplicação.
  */
+/**
+ * Health check simples — usa K6_TIMEOUT (para VUs durante o teste).
+ */
 export function healthCheck() {
   return http.get(`${BASE_URL}/actuator/health`, {
     timeout: TIMEOUT,
     tags: { endpoint: 'health' },
+  });
+}
+
+/**
+ * Health check do seed — timeout maior para suportar inicialização lenta.
+ * O KafkaHealthIndicator pode atrasar o /actuator/health por até 30s
+ * se o broker ainda estiver warm-up.
+ *
+ * Usa 30s (independente do K6_TIMEOUT dos requests normais).
+ */
+export function healthCheckSeed() {
+  const SEED_HEALTH_TIMEOUT = __ENV.SEED_HEALTH_TIMEOUT || '30s';
+  return http.get(`${BASE_URL}/actuator/health`, {
+    timeout: SEED_HEALTH_TIMEOUT,
+    tags: { endpoint: 'health-seed' },
   });
 }
 

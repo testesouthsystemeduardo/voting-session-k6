@@ -4,7 +4,7 @@
  *
  * Usado como função setup() no k6. Retorna dados para os VUs.
  */
-import { createAgenda, openSession, healthCheck } from '../helpers/api.js';
+import { createAgenda, openSession, healthCheckSeed } from '../helpers/api.js';
 import { check, sleep, fail } from 'k6';
 
 const SEED_AGENDAS = parseInt(__ENV.SEED_AGENDAS || '10');
@@ -16,11 +16,12 @@ const BASE_URL     = __ENV.BASE_URL || 'http://localhost:8081';
  * Falha cedo com mensagem clara em vez de logar dezenas de erros nos VUs.
  */
 function assertApiReachable() {
-  const MAX_RETRIES      = 5;
+  const MAX_RETRIES      = 8;   // 8 × (30s timeout + 3s wait) = até 264s de espera
   const RETRY_INTERVAL_S = 3;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const res = healthCheck();
+    // Usa healthCheckSeed (timeout=30s) para suportar startup lento com Kafka
+    const res = healthCheckSeed();
 
     if (res.status === 200) {
       let statusLabel = 'OK';
