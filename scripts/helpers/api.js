@@ -9,9 +9,24 @@ import http from 'k6/http';
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8081';
 const API_V1   = `${BASE_URL}/api/v1/agendas`;
 
+// Timeout padrão: 10s. Ajustável via K6_TIMEOUT env.
+// Evita que timeouts de TCP (30s padrão do kernel) travem os VUs
+// e inflem artificialmente a duração do teste.
+const TIMEOUT = __ENV.K6_TIMEOUT || '10s';
+
 const JSON_HEADERS = {
   'Content-Type': 'application/json',
   'Accept':       'application/json',
+};
+
+const JSON_PARAMS = {
+  headers: JSON_HEADERS,
+  timeout: TIMEOUT,
+};
+
+const GET_PARAMS = {
+  headers: JSON_HEADERS,
+  timeout: TIMEOUT,
 };
 
 // ─── Agendas ─────────────────────────────────────────────────────────────────
@@ -24,7 +39,7 @@ export function createAgenda(title, description = '') {
   return http.post(
     API_V1,
     JSON.stringify({ title, description }),
-    { headers: JSON_HEADERS, tags: { endpoint: 'create_agenda' } }
+    { ...JSON_PARAMS, tags: { endpoint: 'create_agenda' } }
   );
 }
 
@@ -34,7 +49,7 @@ export function createAgenda(title, description = '') {
  */
 export function listAgendas() {
   return http.get(API_V1, {
-    headers: JSON_HEADERS,
+    ...GET_PARAMS,
     tags: { endpoint: 'list_agendas' },
   });
 }
@@ -45,7 +60,7 @@ export function listAgendas() {
  */
 export function getAgenda(agendaId) {
   return http.get(`${API_V1}/${agendaId}`, {
-    headers: JSON_HEADERS,
+    ...GET_PARAMS,
     tags: { endpoint: 'get_agenda' },
   });
 }
@@ -60,7 +75,7 @@ export function openSession(agendaId, durationMinutes = 60) {
   return http.post(
     `${API_V1}/${agendaId}/session`,
     JSON.stringify({ durationMinutes }),
-    { headers: JSON_HEADERS, tags: { endpoint: 'open_session' } }
+    { ...JSON_PARAMS, tags: { endpoint: 'open_session' } }
   );
 }
 
@@ -74,7 +89,7 @@ export function castVote(agendaId, associateId, choice = 'Sim') {
   return http.post(
     `${API_V1}/${agendaId}/votes`,
     JSON.stringify({ associateId, choice }),
-    { headers: JSON_HEADERS, tags: { endpoint: 'cast_vote' } }
+    { ...JSON_PARAMS, tags: { endpoint: 'cast_vote' } }
   );
 }
 
@@ -86,7 +101,7 @@ export function castVote(agendaId, associateId, choice = 'Sim') {
  */
 export function getResult(agendaId) {
   return http.get(`${API_V1}/${agendaId}/result`, {
-    headers: JSON_HEADERS,
+    ...GET_PARAMS,
     tags: { endpoint: 'get_result' },
   });
 }
@@ -99,6 +114,7 @@ export function getResult(agendaId) {
  */
 export function healthCheck() {
   return http.get(`${BASE_URL}/actuator/health`, {
+    timeout: TIMEOUT,
     tags: { endpoint: 'health' },
   });
 }

@@ -209,9 +209,10 @@ fi
 
 # Exportar todas as variáveis de configuração para o processo k6
 export BASE_URL="${BASE_URL:-http://localhost:8081}"
+export K6_TIMEOUT="${K6_TIMEOUT:-10s}"
 
 # Carga
-export LOAD_VUS="${LOAD_VUS:-50}"
+export LOAD_VUS="${LOAD_VUS:-20}"
 export LOAD_RAMPUP="${LOAD_RAMPUP:-1m}"
 export LOAD_STEADY="${LOAD_STEADY:-5m}"
 export LOAD_RAMPDOWN="${LOAD_RAMPDOWN:-1m}"

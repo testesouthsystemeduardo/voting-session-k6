@@ -19,36 +19,40 @@
 
 BASE_URL                 ?= http://localhost:8081
 
+# ─── Timeout HTTP ─────────────────────────────────────────────────────────────
+K6_TIMEOUT               ?= 10s
+
 # ─── Carga (load) ─────────────────────────────────────────────────────────────
-LOAD_VUS                 ?= 50
-LOAD_RAMPUP              ?= 1m
-LOAD_STEADY              ?= 5m
-LOAD_RAMPDOWN            ?= 1m
+# Local Docker: 10-20 VUs | Staging: 50-200 VUs
+LOAD_VUS                 ?= 20
+LOAD_RAMPUP              ?= 30s
+LOAD_STEADY              ?= 3m
+LOAD_RAMPDOWN            ?= 30s
 
 # ─── Estresse (stress) ────────────────────────────────────────────────────────
-STRESS_MAX_VUS           ?= 300
+STRESS_MAX_VUS           ?= 150
 STRESS_STAGE_DURATION    ?= 2m
 STRESS_RECOVERY_VUS      ?= $(LOAD_VUS)
 
 # ─── Pico (spike) ─────────────────────────────────────────────────────────────
-SPIKE_BASE_VUS           ?= 10
-SPIKE_PEAK_VUS           ?= 500
-SPIKE_WARMUP_DURATION    ?= 1m
-SPIKE_PEAK_DURATION      ?= 2m
-SPIKE_RECOVERY_DURATION  ?= 3m
+SPIKE_BASE_VUS           ?= 5
+SPIKE_PEAK_VUS           ?= 100
+SPIKE_WARMUP_DURATION    ?= 30s
+SPIKE_PEAK_DURATION      ?= 1m
+SPIKE_RECOVERY_DURATION  ?= 2m
 
 # ─── Imersão (soak) ───────────────────────────────────────────────────────────
-SOAK_DURATION            ?= 30m
-SOAK_RAMPUP              ?= 2m
-SOAK_RAMPDOWN            ?= 1m
+SOAK_DURATION            ?= 10m
+SOAK_RAMPUP              ?= 1m
+SOAK_RAMPDOWN            ?= 30s
 
 # ─── Volume ───────────────────────────────────────────────────────────────────
-VOLUME_AGENDAS           ?= 500
-VOLUME_VOTES_PER_AGENDA  ?= 20
-VOLUME_INSERT_VUS        ?= 10
-VOLUME_WARMUP_VUS        ?= 5
-VOLUME_QUERY_VUS         ?= 20
-VOLUME_QUERY_DURATION    ?= 5m
+VOLUME_AGENDAS           ?= 100
+VOLUME_VOTES_PER_AGENDA  ?= 10
+VOLUME_INSERT_VUS        ?= 5
+VOLUME_WARMUP_VUS        ?= 2
+VOLUME_QUERY_VUS         ?= 10
+VOLUME_QUERY_DURATION    ?= 2m
 
 # ─── Observabilidade ──────────────────────────────────────────────────────────
 GRAFANA_PORT             ?= 3000
