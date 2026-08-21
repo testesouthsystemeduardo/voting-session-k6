@@ -8,7 +8,7 @@ import { createAgenda, openSession, healthCheckSeed } from '../helpers/api.js';
 import { check, sleep, fail } from 'k6';
 
 const SEED_AGENDAS = parseInt(__ENV.SEED_AGENDAS || '10');
-const BASE_URL     = __ENV.BASE_URL || 'http://localhost:8081';
+const BASE_URL     = __ENV.BASE_URL || 'http://127.0.0.1:8081';
 
 /**
  * Verifica se a API está acessível antes de iniciar o seed.
@@ -16,11 +16,10 @@ const BASE_URL     = __ENV.BASE_URL || 'http://localhost:8081';
  * Falha cedo com mensagem clara em vez de logar dezenas de erros nos VUs.
  */
 function assertApiReachable() {
-  const MAX_RETRIES      = 8;   // 8 × (30s timeout + 3s wait) = até 264s de espera
-  const RETRY_INTERVAL_S = 3;
+  const MAX_RETRIES      = 6;   // 6 × (5s timeout + 2s wait) = ~42s — cabe no setupTimeout
+  const RETRY_INTERVAL_S = 2;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    // Usa healthCheckSeed (timeout=30s) para suportar startup lento com Kafka
     const res = healthCheckSeed();
 
     if (res.status === 200) {

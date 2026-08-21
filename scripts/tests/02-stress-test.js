@@ -44,6 +44,7 @@ const RECOVERY_VUS = parseInt(__ENV.STRESS_RECOVERY_VUS   || String(BASE_VUS));
 
 // ─── Opções ──────────────────────────────────────────────────────────────────
 export const options = {
+  setupTimeout: '5m',
   stages: [
     { duration: STAGE_DUR, target: BASE_VUS                      }, // baseline (1x)
     { duration: STAGE_DUR, target: Math.round(BASE_VUS * 2)      }, // 2x

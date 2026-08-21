@@ -81,13 +81,15 @@ export function checkOpenSession(res, tolerateConflict = false) {
 
 /**
  * Valida resposta de voto.
- * Aceita 201 (ok) ou 409 (associado já votou — esperado em stress/volume).
+ * Aceita 202 Accepted (processamento assíncrono via Kafka)
+ * ou 409 (associado já votou — esperado em stress/volume).
  */
 export function checkCastVote(res, tolerateDuplicate = false) {
-  const validStatuses = tolerateDuplicate ? [201, 409, 422] : [201];
+  const validStatuses = tolerateDuplicate ? [202, 409, 422] : [202];
 
   const ok = check(res, {
-    'cast vote: valid status': (r) => validStatuses.includes(r.status),
+    'cast vote: status 202 (async accepted)': (r) => validStatuses.includes(r.status),
+    'cast vote: has correlationId':           (r) => r.status === 202 ? safeJson(r, 'correlationId') !== null : true,
   });
   if (!ok) {
     errors.castVote.add(1);

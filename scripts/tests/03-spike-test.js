@@ -45,6 +45,7 @@ const RECOVERY_DUR = __ENV.SPIKE_RECOVERY_DURATION          || '3m';
 
 // ─── Opções ──────────────────────────────────────────────────────────────────
 export const options = {
+  setupTimeout: '5m',
   stages: [
     { duration: WARMUP_DUR,   target: BASE_VUS  }, // aquecimento
     { duration: '10s',        target: PEAK_VUS  }, // spike instantâneo ↑

@@ -49,6 +49,7 @@ const WARMUP_AGENDAS   = Math.max(10, Math.round(TOTAL_AGENDAS * 0.1)); // 10% c
 
 // ─── Opções ──────────────────────────────────────────────────────────────────
 export const options = {
+  setupTimeout: '5m',
   scenarios: {
     warmup: {
       executor:    'per-vu-iterations',

@@ -34,14 +34,18 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 TESTS_DIR="$ROOT_DIR/scripts/tests"
 REPORTS_DIR="$ROOT_DIR/reports"
 
-# ─── Carrega .env automaticamente (se existir) ───────────────────────────────
-# Garante que `./run/run-test.sh load` e `make load` tenham o mesmo comportamento.
+# ─── Carrega .env sem sobrescrever variáveis já definidas na CLI ─────────────
 ENV_FILE="$ROOT_DIR/.env"
 if [[ -f "$ENV_FILE" ]]; then
-  set -a  # exporta automaticamente todas as variáveis definidas no source
-  # shellcheck disable=SC1090
-  source "$ENV_FILE"
-  set +a
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    key="${key// /}"
+    if [[ -n "$key" && -z "${!key+x}" ]]; then
+      export "$key=$val"
+    fi
+  done < "$ENV_FILE"
   echo -e "\033[0;34m[INFO]\033[0m  Configurações carregadas de: $ENV_FILE"
 fi
 
@@ -143,7 +147,7 @@ else
 fi
 
 # ─── Pre-flight: aguardar API estar pronta ────────────────────────────────────
-TARGET_URL="${BASE_URL:-http://localhost:8081}"
+TARGET_URL="${BASE_URL:-http://127.0.0.1:8081}"
 HEALTH_URL="${TARGET_URL}/actuator/health"
 
 PREFLIGHT_MAX_WAIT="${PREFLIGHT_MAX_WAIT:-120}"   # segundos máximos de espera
@@ -219,8 +223,9 @@ if [[ "$K6_CMD" == docker* ]]; then
 fi
 
 # Exportar todas as variáveis de configuração para o processo k6
-export BASE_URL="${BASE_URL:-http://localhost:8081}"
+export BASE_URL="${BASE_URL:-http://127.0.0.1:8081}"
 export K6_TIMEOUT="${K6_TIMEOUT:-10s}"
+export SEED_HEALTH_TIMEOUT="${SEED_HEALTH_TIMEOUT:-5s}"
 
 # Carga
 export LOAD_VUS="${LOAD_VUS:-20}"

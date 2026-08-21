@@ -17,7 +17,7 @@
 # Carrega variáveis do .env se existir
 -include .env
 
-BASE_URL                 ?= http://localhost:8081
+BASE_URL                 ?= http://127.0.0.1:8081
 
 # ─── Timeout HTTP ─────────────────────────────────────────────────────────────
 K6_TIMEOUT               ?= 10s

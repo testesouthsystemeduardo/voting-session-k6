@@ -46,6 +46,7 @@ const RAMPDOWN = __ENV.LOAD_RAMPDOWN          || '1m';
 
 // ─── Opções do teste ─────────────────────────────────────────────────────────
 export const options = {
+  setupTimeout: '5m', // seed aguarda Kafka + app warm-up (app leva ~20s para iniciar)
   stages: [
     { duration: RAMPUP,   target: VUS }, // ramp-up
     { duration: STEADY,   target: VUS }, // steady state

@@ -57,6 +57,7 @@ function soakSessionDuration() {
 
 // ─── Opções ──────────────────────────────────────────────────────────────────
 export const options = {
+  setupTimeout: '5m',
   stages: [
     { duration: RAMPUP_DUR,   target: VUS }, // ramp-up suave
     { duration: SOAK_DUR,     target: VUS }, // soak

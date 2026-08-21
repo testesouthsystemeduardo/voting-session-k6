@@ -6,7 +6,7 @@
  */
 import http from 'k6/http';
 
-const BASE_URL = __ENV.BASE_URL || 'http://localhost:8081';
+const BASE_URL = __ENV.BASE_URL || 'http://127.0.0.1:8081';
 const API_V1   = `${BASE_URL}/api/v1/agendas`;
 
 // Timeout padrão: 10s. Ajustável via K6_TIMEOUT env.
@@ -44,11 +44,12 @@ export function createAgenda(title, description = '') {
 }
 
 /**
- * GET /api/v1/agendas
- * Lista todas as pautas cadastradas.
+ * GET /api/v1/agendas?page=0&size=20
+ * Lista pautas com paginação para evitar full table scan.
+ * A API suporta ?page=N&size=N (máx 100 por página).
  */
-export function listAgendas() {
-  return http.get(API_V1, {
+export function listAgendas(page = 0, size = 20) {
+  return http.get(`${API_V1}?page=${page}&size=${size}`, {
     ...GET_PARAMS,
     tags: { endpoint: 'list_agendas' },
   });
@@ -130,7 +131,9 @@ export function healthCheck() {
  * Usa 30s (independente do K6_TIMEOUT dos requests normais).
  */
 export function healthCheckSeed() {
-  const SEED_HEALTH_TIMEOUT = __ENV.SEED_HEALTH_TIMEOUT || '30s';
+  // 5s — o pre-flight do run-test.sh já espera a API subir.
+  // 30s aqui estoura o setupTimeout padrão do k6 (60s) na 2ª tentativa.
+  const SEED_HEALTH_TIMEOUT = __ENV.SEED_HEALTH_TIMEOUT || '5s';
   return http.get(`${BASE_URL}/actuator/health`, {
     timeout: SEED_HEALTH_TIMEOUT,
     tags: { endpoint: 'health-seed' },
@@ -157,6 +160,7 @@ export function fullVotingFlow(title, associateId, choice = 'Sim', sessionDurati
   }
 
   const voteRes = castVote(agendaId, associateId, choice);
+  // castVote retorna 202 Accepted (assíncrono via Kafka) — não bloquear em 201
 
   const resultRes = getResult(agendaId);
 
